@@ -15,19 +15,32 @@ class SpotifyController {
     
     public function getSpotifyData(Request $request, Response $response, array $args) {
         $bandToSearch = $request->getParam('q');
+        $limit = $request->getParam('limit');
+        $offset = $request->getParam('offset');
 
         if($bandToSearch === '') {
             return $response->withJson([ 'error' => 'Band name is empty. Please search something.' ], 400);
         }
 
-        $res = $this->client->getData($bandToSearch);
+        $res = $this->client->getData($bandToSearch, $limit, $offset);
         
-        return $response->withJson($res);
+        return $response->withJson($res[0], $res[1]);
     }
 
     public function login(Request $request, Response $response, array $args) {
-        $res = $this->client->getAccessToken();
+        $clientId = $request->getParam('client_id');
+        $clientSecret = $request->getParam('client_secret');
 
-        return $response->withJson($res);
+        $invalidClientId = empty($clientId) || is_null($clientId);
+        $invalidClientSecret = empty($clientSecret) || is_null($clientSecret);
+        if($invalidClientId || $invalidClientSecret) {
+            return $response->withJson([
+                'error' => 'Invalid credentials. Try again.'
+            ], 401);
+        }
+        
+        $res = $this->client->getAccessToken($clientId, $clientSecret);
+
+        return $response->withJson($res[0], $res[1]);
     }
 }

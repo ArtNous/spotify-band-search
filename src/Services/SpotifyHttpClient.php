@@ -3,11 +3,8 @@
 namespace App\Services;
 
 use GuzzleHttp\Exception\ConnectException;
-use GuzzleHttp\Exception\ClientException;
-use Illuminate\Database\Query\Builder;
 use GuzzleHttp\Client;
 use App\Models\Album;
-use App\Models\Token;
 
 class SpotifyHttpClient {
 
@@ -27,14 +24,22 @@ class SpotifyHttpClient {
      * @param string $uri Spotify endpoint
      * @return array $responseArray
      */
-    public function getData(string $band, string $uri = 'search') {
+    public function getData(string $band, $limit = null, $offset = null, string $uri = 'search') {
         $tokenExists = $this->fileManager->has('token.txt');
         
         if($tokenExists) {
             $token = $this->fileManager->read('token.txt');
         } else {
-            $token = $this->getAccessToken();
+            return [[
+                'error' => 'Make a POST request to the next url to login',
+                'loginUrl' => 'http://' . $_SERVER['HTTP_HOST'] . '/api/v1/token'
+            ], 401];
         }
+
+        $queryParams['q'] = 'artist:' . urlencode($band);
+        $queryParams['type'] = 'album';
+        if($limit) $queryParams['limit'] = $limit;
+        if($offset) $queryParams['offset'] = $offset;
 
         try {
             
@@ -43,55 +48,50 @@ class SpotifyHttpClient {
                     'Authorization' => "Bearer $token",
                     'Content-Type' => 'application/json'
                 ],
-                'query' => [
-                    'q' => 'artist:' . urlencode($band),
-                    'type' => 'album'
-                ]
+                'query' => $queryParams
             ]);
             
         } catch (\Throwable $th) {
-            $code = $th->getResponse()->getStatusCode();
+            $code = null;
             if($th instanceof ConnectException) {
-                return [ 'msg' => 'Connection refused. Try again please.' . $th->getMessage() ];
+                return [[ 'error' => 'Connection refused. Try again please.' . $th->getMessage() ], 408];
             } else {
-                $responseArray['error'] = $th->getResponse()->getReasonPhrase();
+                $code = $th->getResponse()->getStatusCode();
+                if($code === 401) {
+                    $responseArray['msg'] = 'Make a POST request to the next url to login';
+                    $responseArray['loginUrl'] = 'http://' . $_SERVER['HTTP_HOST'] . '/api/v1/token';
+                }
+                $responseArray['error'] = $th->getMessage();
             }
 
-            if($code === 401 || $code === 400) {
-                $responseArray['loginUrl'] = 'http://' . $_SERVER['HTTP_HOST'] . '/api/v1/token';
-            }
-
-            return $responseArray;
+            return [$responseArray, $code];
         }
-
-        $code = $response->getStatusCode();
-        if($code !== 200) return false;
-
-        $albums = [];
 
         $data = json_decode($response->getBody());
-
         if($data->albums->total === 0) {
-            return [ 'msg' => 'No data. Try another band.' ];
+            return [[ 'msg' => 'No data. Try another band.' ], 200];
         }
 
+        $albums = [];
         foreach($data->albums->items as $item) {
             if($item->album_type === 'album') {
                 $albums[] = (new Album($item))->toArray();
             }
         }
 
-        return $albums;
+        return [$albums, $response->getStatusCode()];
     }
 
     /**
      * Make login on spotify
-     * and set the token locally
-     * to get the data
+     * and store the token locally
+     * to access the data
+     * @param string $clientId
+     * @param string $clientSecret
      * @return array
      */
-    public function getAccessToken() {
-        $auth = 'Basic '. base64_encode($this->container['settings']['spotify_client_id'] . ':' . $this->container['settings']['spotify_client_secret']);
+    public function getAccessToken(string $clientId, string $clientSecret) {
+        $auth = 'Basic '. base64_encode("$clientId:$clientSecret");
         try {
             $response = static::createClient(self::LOGIN_URL)->post('token', [
                 'form_params' => [
@@ -104,26 +104,21 @@ class SpotifyHttpClient {
             ]);
 
             $token = json_decode($response->getBody())->access_token;
-            $this->fileManager->put('token.txt', $token);
+            $fileResponse = $this->fileManager->put('token.txt', $token);
+            
+            if(!$fileResponse) {
+                return [[ 'msg' => 'Permission error. Could not write to the path.' ], 403];
+            }
 
-            return [
-                'msg' => 'Authenticated!',
+            return [[
+                'msg' => 'Authenticated! Make a GET request to the next url to search something.',
                 'search_url' => 'http://' . $_SERVER['HTTP_HOST'] . '/api/v1/albums?q=leonardo'
-            ];;
+            ], 200];
 
         } catch (\Throwable $th) {
-            if($th instanceof ConnectException) {
-                return [ 'error' => 'Connection refused. Try again please.' . $th->getMessage() ];
-            } else if ($th instanceof ClientConnection) {
-                return [
-                    'error' => $th->getResponse()->getReasonPhrase(),
-                    'msg' => $th->getMessage()
-                ];
-            } else {
-                return [
-                    'error' => $th->getMessage()
-                ];
-            }
+            return [[
+                'error' => $th instanceof ConnectException ? 'Connection refused. Try again please.' . $th->getMessage() : $th->getMessage()
+            ], $th instanceof ConnectException ? 408 : $th->getResponse()->getStatusCode()];
         }
     }
 
@@ -135,7 +130,7 @@ class SpotifyHttpClient {
     protected static function createClient($url = null) {
         $client = new Client([
             'base_uri' => $url ?? self::BASE_URL,
-            'timeout'  => 5.0,
+            'timeout'  => 2,
         ]);
 
         return $client;
