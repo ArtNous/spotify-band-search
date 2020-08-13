@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\ServerException;
 use GuzzleHttp\Client;
 use App\Models\Album;
 
@@ -51,18 +53,15 @@ class SpotifyHttpClient {
                 'query' => $queryParams
             ]);
             
-        } catch (\Throwable $th) {
-            $code = null;
-            if($th instanceof ConnectException) {
-                return [[ 'error' => 'Connection refused. Try again please.' . $th->getMessage() ], 408];
-            } else {
-                $code = $th->getResponse()->getStatusCode();
-                if($code === 401) {
-                    $responseArray['msg'] = 'Make a POST request to the next url to login';
-                    $responseArray['loginUrl'] = 'http://' . $_SERVER['HTTP_HOST'] . '/api/v1/token';
-                }
-                $responseArray['error'] = $th->getMessage();
+        } catch (ConnectException $ex) {
+            return [[ 'error' => 'Connection refused. Try again please.' . $ex->getMessage() ], 408];
+        } catch (ClientException | ServerException $ex) {
+            $code = $ex->getResponse()->getStatusCode();
+            if($code === 401) {
+                $responseArray['msg'] = 'Make a POST request to the next url to login';
+                $responseArray['loginUrl'] = 'http://' . $_SERVER['HTTP_HOST'] . '/api/v1/token';
             }
+            $responseArray['error'] = $ex->getMessage();
 
             return [$responseArray, $code];
         }
@@ -115,10 +114,14 @@ class SpotifyHttpClient {
                 'search_url' => 'http://' . $_SERVER['HTTP_HOST'] . '/api/v1/albums?q=leonardo'
             ], 200];
 
-        } catch (\Throwable $th) {
+        } catch (ClientException | ServerException $ex) {
             return [[
-                'error' => $th instanceof ConnectException ? 'Connection refused. Try again please.' . $th->getMessage() : $th->getMessage()
-            ], $th instanceof ConnectException ? 408 : $th->getResponse()->getStatusCode()];
+                'error' => $ex->getMessage()
+            ], $ex->getResponse()->getStatusCode()];
+        } catch (ConnectException $ex) {
+            return [[
+                'error' => 'Connection refused. Try again please.' . $ex->getMessage()
+            ], 408];
         }
     }
 
