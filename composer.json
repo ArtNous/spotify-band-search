@@ -1,4 +1,14 @@
 {
+    "name": "spotity-client",
+    "authors": [
+        {
+            "name": "Jesus Pacheco",
+            "email": "1104xyz@gmail.com"
+        }
+    ],
+    "description": "API Client to search artists and albums from Spotify platform",
+    "keywords": ["spotify", "api", "client", "music"],
+    "version": "1.0.0",
     "require": {
         "slim/slim": "3.*",
         "guzzlehttp/guzzle": "^7.0",
