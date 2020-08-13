@@ -1,4 +1,4 @@
-# spotify-band-search
+# Spotify Client
 API para realizar busquedas de albumes de artistas y bandas.
 
 ### Pasos para utilizar la API:
