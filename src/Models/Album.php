@@ -32,7 +32,7 @@ class Album {
     public function __construct($item) {
         $this->name = $item->name;
         $this->released = $item->release_date;
-        $this->cover = $item->images[0];
+        $this->cover = count($item->images) ? $item->images[0] : [];
         $this->tracks = $item->total_tracks;
     }
 
